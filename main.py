@@ -1,6 +1,8 @@
+from datetime import datetime
 import re
 import numpy as np
 import pandas as pd
+from pandas import DataFrame
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -12,17 +14,13 @@ from selenium.common.exceptions import UnexpectedAlertPresentException
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
 
-start_div = 1  # start at -60kg
-
-end_comp = 2239  # last comp before Tokyo Olympics
-end_div = 14  # end at +78 kg
-
 relevant_comps = ["Grand Prix", "Grand Slam", "Masters", "World Senior Championship", "World Championships Senior",
                   "World Judo Championships Seniors"]
 
 
 def get_competitions():
     start_comp = 1341  # first comp after 2016 Rio Olympics
+    end_comp = 2239  # last comp before Tokyo Olympics
     comps = []
     start_dates = []
     end_dates = []
@@ -64,10 +62,67 @@ def get_competitions():
     competitions['start_date'] = pd.to_datetime(competitions['start_date'], format='%Y-%m-%d')
     competitions = competitions.loc[(competitions['start_date'] > '2016-09-22')]
 
-    print(competitions)
+    return competitions
 
     #  to save as CSV file
     #  competitions.to_csv('competitions.csv')
 
 
-get_competitions()
+# get_competitions()
+
+tournaments = get_competitions()
+
+
+def get_players():
+    df = tournaments
+    start_div = 1  # start at -60kg
+    end_div = 14  # end at +78 kg
+    player_ids = []
+    player_names = []
+    player_countries = []
+    player_sex = []
+
+    for i in df.index:
+        while start_div <= end_div:
+            driver.get(f'https://judobase.ijf.org/#/competition/profile/{i}/competitors/{start_div}')
+            WebDriverWait(driver, 3).until(EC.element_to_be_clickable((By.XPATH, '//div[@class="js-categories"]')))
+            players = (driver.find_elements(By.XPATH, '//tr[@data-id_person]'))
+            names = (driver.find_elements(By.XPATH, '//td[@data-name="full_name"]'))
+            countries = (driver.find_elements(By.XPATH, '//span[@title]'))
+            for p_id in players:
+                player_ids.append(p_id.get_attribute('data-id_person'))
+                if start_div <= 7:
+                    player_sex.append('Male')
+                else:
+                    player_sex.append('Female')
+            for name in names:
+                player_names.append(name.text)
+            for country in countries:
+                if country.get_attribute('title') == "Russian Judo Federation":
+                    player_countries.append("Russian Federation")
+                elif country.get_attribute('title') == "IJF":
+                    player_countries.append("IJF Refugee Team")
+                else:
+                    player_countries.append(country.get_attribute('title'))
+            start_div += 1
+            if start_div > end_div:
+                start_div = 1
+                break
+
+    athletes: DataFrame = pd.DataFrame(np.column_stack([player_ids, player_names, player_countries, player_sex]),
+                                       columns=['player_id', 'athlete_name', 'nationality', 'sex'])
+
+    pd.set_option('display.max_rows', None)
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', None)
+    pd.set_option('display.max_colwidth', None)
+    athletes.set_index('player_id', inplace=True)
+
+    athletes = athletes.groupby(athletes.index).first()
+
+#     athletes.to_csv('athletes.csv')
+
+    return athletes
+
+
+# get_players()
