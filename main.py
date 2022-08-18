@@ -126,3 +126,135 @@ def get_players():
 
 
 # get_players()
+
+def get_weights():
+    player_id = []
+    weight_cat = []
+    start_time = []
+    end_time = []
+    df1 = athletes
+    for i in df1.index:
+        df2 = tournaments
+        driver.get(f'https://judobase.ijf.org/#/competitor/profile/{i}/results')
+        WebDriverWait(driver, 5).until(EC.visibility_of_element_located((By.XPATH, '//td[@class=" sorting_1"]')))
+
+        comp_col = driver.find_elements(By.XPATH, '//*[@data-table_name="results"]/tbody/tr/td[3]')
+
+        results = []
+        row = 1
+        curr_weight = ''
+        curr_date = ''
+        curr_comp = ''
+
+        for c in comp_col:
+            date_col = driver.find_element(By.XPATH, f'//*[@data-table_name="results"]/tbody/tr[{row}]/td[2]')
+            weight_col = driver.find_element(By.XPATH, f'//*[@data-table_name="results"]/tbody/tr[{row}]/td[4]')
+            if c.text in (df2["competition"].tolist()):
+                while curr_weight == weight_col.text:
+                    curr_date = date_col.text
+                    curr_comp = c.text
+                    break
+                while curr_weight != weight_col.text:
+                    if curr_comp:
+                        results.append([i, curr_weight, curr_date, curr_comp])
+                    curr_weight = weight_col.text
+                    curr_date = date_col.text
+                    curr_comp = c.text
+                    results.append([i, weight_col.text, date_col.text, c.text])
+            row += 1
+        results.append([i, curr_weight, curr_date, curr_comp])
+        results.reverse()
+        for r in results:
+            del r[3]
+
+        pl_id = []
+        kgs = []
+        oddstart_evenstop = []
+
+        for x in results:
+            pl_id.append(x[0])
+            kgs.append(x[1])
+            oddstart_evenstop.append(x[2])
+
+        final_pl_id = (pl_id[::2])
+        final_kgs = (kgs[::2])
+        final_start = (oddstart_evenstop[::2])
+        final_stop = (oddstart_evenstop[1::2])
+        final_stop[-1] = None
+
+        player_id.extend(final_pl_id)
+        weight_cat.extend(final_kgs)
+        start_time.extend(final_start)
+        end_time.extend(final_stop)
+
+        driver.navigate().refresh()  # added this today and will run to see if it resolves issue of chrome crashing
+
+
+    # print(player_id)
+    # print(weight_cat)
+    # print(start_time)
+    # print(end_time)
+
+    weights: DataFrame = pd.DataFrame(np.column_stack([player_id, weight_cat, start_time, end_time]),
+                                       columns=['player_id', 'weight_cat', 'start_time', 'end_time'])
+
+    pd.set_option('display.max_rows', None)
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', None)
+    pd.set_option('display.max_colwidth', None)
+    weights.set_index('player_id', inplace=True)
+
+    # weights.to_csv('weights.csv')
+
+
+# get_weights()
+
+
+def get_matches():
+    df = tournaments
+
+    comp_list = []
+    id_list = []
+    win_list = []
+    round_list = []
+
+    for i in df.index:
+        driver.get(f'https://judobase.ijf.org/#/competition/profile/{i}/contests/0')
+        WebDriverWait(driver, 3).until(EC.visibility_of_element_located((By.XPATH, '//div[@class="c1"]')))
+        id_cols = driver.find_elements(By.XPATH, '//*[@id="tile_view"]/div[2]/div/div/div/div/div/div/div/ul/li/a')
+
+        for c in id_cols:
+            links = c.get_attribute('href')
+            temp = re.findall(r'\d+', links)
+            res = ''.join(map(str, temp))
+            if res:
+                id_list.append(res)
+
+        winners = (driver.find_elements(By.XPATH, '// *[ @ id = "tile_view"] / div[2] / div / div / div / div / div'))
+        for w in winners:
+            if w.get_attribute('class') == 'js-contest contest winner-a':
+                win_list.append('Player 1 Wins')
+            elif w.get_attribute('class') == 'js-contest contest winner-b':
+                win_list.append('Player 2 Wins')
+            elif w.get_attribute('class') == 'js-contest contest':
+                win_list.append('No Winner')
+
+        rounds = driver.find_elements(By.XPATH, '//div[@class="round"]')
+        for r in rounds:
+            round_list.append(r.text)
+            comp_list.append(i)
+
+
+
+    matches: DataFrame = pd.DataFrame(np.column_stack([comp_list, id_list[::2], id_list[1::2], round_list, win_list]),
+                                       columns=['comp_id', 'player_1_id', 'player_2_id', 'round', 'result'])
+
+    pd.set_option('display.max_rows', None)
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', None)
+    pd.set_option('display.max_colwidth', None)
+    matches.set_index('comp_id', inplace=True)
+
+    # matches.to_csv('matches.csv')
+
+# get_matches()
