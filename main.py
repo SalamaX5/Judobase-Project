@@ -9,7 +9,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.common.exceptions import UnexpectedAlertPresentException
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
@@ -85,7 +85,7 @@ def get_players():
     for i in df.index:
         while start_div <= end_div:
             driver.get(f'https://judobase.ijf.org/#/competition/profile/{i}/competitors/{start_div}')
-            WebDriverWait(driver, 3).until(EC.element_to_be_clickable((By.XPATH, '//div[@class="js-categories"]')))
+            WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, '//div[@class="js-categories"]')))
             players = (driver.find_elements(By.XPATH, '//tr[@data-id_person]'))
             names = (driver.find_elements(By.XPATH, '//td[@data-name="full_name"]'))
             countries = (driver.find_elements(By.XPATH, '//span[@title]'))
@@ -120,12 +120,15 @@ def get_players():
 
     athletes = athletes.groupby(athletes.index).first()
 
-#     athletes.to_csv('athletes.csv')
+    athletes.to_csv('athletes.csv')
 
     return athletes
 
 
 # get_players()
+
+# athletes = get_players()
+
 
 def get_weights():
     player_id = []
@@ -136,6 +139,7 @@ def get_weights():
     for i in df1.index:
         df2 = tournaments
         driver.get(f'https://judobase.ijf.org/#/competitor/profile/{i}/results')
+        driver.refresh()
         WebDriverWait(driver, 5).until(EC.visibility_of_element_located((By.XPATH, '//td[@class=" sorting_1"]')))
 
         comp_col = driver.find_elements(By.XPATH, '//*[@data-table_name="results"]/tbody/tr/td[3]')
@@ -187,16 +191,8 @@ def get_weights():
         start_time.extend(final_start)
         end_time.extend(final_stop)
 
-        driver.navigate().refresh()  # added this today and will run to see if it resolves issue of chrome crashing
-
-
-    # print(player_id)
-    # print(weight_cat)
-    # print(start_time)
-    # print(end_time)
-
     weights: DataFrame = pd.DataFrame(np.column_stack([player_id, weight_cat, start_time, end_time]),
-                                       columns=['player_id', 'weight_cat', 'start_time', 'end_time'])
+                                      columns=['player_id', 'weight_cat', 'start_time', 'end_time'])
 
     pd.set_option('display.max_rows', None)
     pd.set_option('display.max_columns', None)
@@ -204,7 +200,7 @@ def get_weights():
     pd.set_option('display.max_colwidth', None)
     weights.set_index('player_id', inplace=True)
 
-    # weights.to_csv('weights.csv')
+    weights.to_csv('weights.csv')
 
 
 # get_weights()
@@ -244,10 +240,8 @@ def get_matches():
             round_list.append(r.text)
             comp_list.append(i)
 
-
-
     matches: DataFrame = pd.DataFrame(np.column_stack([comp_list, id_list[::2], id_list[1::2], round_list, win_list]),
-                                       columns=['comp_id', 'player_1_id', 'player_2_id', 'round', 'result'])
+                                      columns=['comp_id', 'player_1_id', 'player_2_id', 'round', 'result'])
 
     pd.set_option('display.max_rows', None)
     pd.set_option('display.max_columns', None)
@@ -255,6 +249,104 @@ def get_matches():
     pd.set_option('display.max_colwidth', None)
     matches.set_index('comp_id', inplace=True)
 
-    # matches.to_csv('matches.csv')
+    matches.to_csv('matches.csv')
+
 
 # get_matches()
+
+
+def get_match_details():
+    df = tournaments
+    full_list = []
+
+    for i in df.index:
+        driver.get(f'https://judobase.ijf.org/#/competition/profile/{i}/contests/0')
+
+        WebDriverWait(driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//a[@href="#table_view"]')))
+        table_view = driver.find_element(By.XPATH, '//a[@href="#table_view"]')
+        driver.execute_script("arguments[0].click();", table_view)
+
+        WebDriverWait(driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//span[@class="glyphicon glyphicon-play"]')))
+        matches = driver.find_elements(By.XPATH, '//span[@class="glyphicon glyphicon-play"]')
+        match_row = 1
+        for m in range(len(matches)):
+            WebDriverWait(driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//span[@class="glyphicon glyphicon-play"]')))
+            while True:
+                try:
+                    play_button = driver.find_element(By.XPATH, f"//tbody/tr[{match_row}]/td[14]/div/span")
+                    driver.execute_script("arguments[0].click();", play_button)
+                    driver.refresh()
+                except NoSuchElementException:
+                    match_row += 1
+                    continue
+                break
+
+            try:
+                WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.XPATH, '//div[@class="col-xs-6"]')))
+
+            except TimeoutException:
+                driver.refresh()
+                WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.XPATH, '//div[@class="col-xs-6"]')))
+
+            player_1 = driver.find_element(By.XPATH, '//div[@class="col-xs-6 text-right"]').text
+            player_2 = driver.find_element(By.XPATH, '//div[@class="col-xs-6"]').text
+            p1 = player_1[:-4]
+            p2 = player_2[:-4]
+
+            scores = driver.find_elements(By.XPATH, '//tr[@class="js-event"]')
+            row = 1
+            for s in range(len(scores)):
+                WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.XPATH, '//*[@id="playerIframe"]')))
+                match_url = driver.find_element(By.XPATH, '//*[@id="playerIframe"]')
+                match_attr = match_url.get_attribute("src")
+                match_num = re.split('_\D_|\?', match_attr)[1]
+                p1_score = driver.find_element(By.XPATH, f'/html/body/div[1]/div[2]/div/div[2]/div/div/div/div[6]/table/tbody/tr[{row}]/td[1]')
+                p2_score = driver.find_element(By.XPATH, f'/html/body/div[1]/div[2]/div/div[2]/div/div/div/div[6]/table/tbody/tr[{row}]/td[3]')
+
+                if p2_score.text == '':
+                    timestamp = driver.find_element(By.XPATH, f'/html/body/div[1]/div[2]/div/div[2]/div/div/div/div[6]/table/tbody/tr[{row}]/td[2]')
+                    score = p1_score.text.replace('\n', ': ')
+                    full_list.append([i, match_num, p1, score, timestamp.text])
+                    row += 1
+
+                elif p1_score.text == '':
+                    timestamp = driver.find_element(By.XPATH, f'/html/body/div[1]/div[2]/div/div[2]/div/div/div/div[6]/table/tbody/tr[{row}]/td[2]')
+                    score = p2_score.text.replace('\n', ': ')
+                    full_list.append([i, match_num, p2, score, timestamp.text])
+                    row += 1
+
+                else:
+                    timestamp = driver.find_element(By.XPATH, f'/html/body/div[1]/div[2]/div/div[2]/div/div/div/div[6]/table/tbody/tr[{row}]/td[2]')
+                    score_1 = p1_score.text.replace('\n', ': ')
+                    score_2 = p2_score.text.replace('\n', ': ')
+                    full_list.append([i, match_num, p1, score_1, timestamp.text])
+                    full_list.append([i, match_num, p2, score_2, timestamp.text])
+                    row += 1
+
+            driver.back()
+            match_row += 1
+            WebDriverWait(driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//a[@href="#table_view"]')))
+            table_view = driver.find_element(By.XPATH, '//a[@href="#table_view"]')
+            driver.execute_script("arguments[0].click();", table_view)
+
+            WebDriverWait(driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//span[@class="glyphicon glyphicon-play"]')))
+
+    comp_id = [sublist[0] for sublist in full_list]
+    match_id = [sublist[1] for sublist in full_list]
+    player = [sublist[2] for sublist in full_list]
+    event = [sublist[3] for sublist in full_list]
+    event_time = [sublist[4] for sublist in full_list]
+
+    match_details: DataFrame = pd.DataFrame(np.column_stack([comp_id, match_id, player, event, event_time]),
+                                      columns=['comp_id', 'match_id', 'player', 'event', 'time'])
+
+    pd.set_option('display.max_rows', None)
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', None)
+    pd.set_option('display.max_colwidth', None)
+    match_details.set_index('match_id', inplace=True)
+
+    match_details.to_csv('match_details.csv')
+
+
+# get_match_details()
